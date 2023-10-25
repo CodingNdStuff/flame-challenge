@@ -1,0 +1,25 @@
+{
+    "activeFile": "testMap.tmx",
+    "fileStates": {
+        "base-tile_set.tsx": {
+            "scaleInDock": 1.5,
+            "scaleInEditor": 1
+        },
+        "testMap.tmx": {
+            "scale": 2,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 385,
+                "y": 128.5
+            }
+        }
+    },
+    "openFiles": [
+        "base-tile_set.tsx",
+        "testMap.tmx"
+    ],
+    "recentFiles": [
+        "base-tile_set.tsx",
+        "testMap.tmx"
+    ]
+}
