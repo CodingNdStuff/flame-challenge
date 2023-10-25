@@ -23,21 +23,26 @@ class ScoreNotifier extends ChangeNotifier {
 }
 
 late ScoreNotifier scoreNotifier;
-const hudOverlayIdentifier = 'hud';
 
 void main() {
   scoreNotifier = ScoreNotifier();
   WidgetsFlutterBinding.ensureInitialized();
   Flame.device.fullScreen();
   Flame.device.setLandscape();
-  runApp(GameWidget(
-    game: JumperGame(),
-    overlayBuilderMap: {
-      'hud': (BuildContext context, JumperGame game) {
-        return Hud(game: game);
-      },
-    },
-  ));
+  runApp(
+    MaterialApp(
+      home: Scaffold(
+        body: GameWidget(
+          game: JumperGame(),
+          overlayBuilderMap: {
+            'hud': (BuildContext context, JumperGame game) {
+              return Hud(game: game);
+            },
+          },
+        ),
+      ),
+    ),
+  );
 }
 
 class JumperGame extends FlameGame with TapCallbacks, HasCollisionDetection {
@@ -46,6 +51,8 @@ class JumperGame extends FlameGame with TapCallbacks, HasCollisionDetection {
   int charge = 0;
   bool isIdle = false;
   double _totalDt = 0;
+  double _timeSinceBox = 0;
+  int pressStartTime = 0;
 
   @override
   Future<void>? onLoad() async {
@@ -53,9 +60,8 @@ class JumperGame extends FlameGame with TapCallbacks, HasCollisionDetection {
     add(Sky());
     add(ScreenHitbox());
     add(player);
-
-    add(BoxStack(isBottom: true, spawnX: 0));
-    overlays.add(hudOverlayIdentifier);
+    add(Box(spawnX: 0));
+    overlays.add('hud');
   }
 
   void gameover() {
@@ -66,7 +72,6 @@ class JumperGame extends FlameGame with TapCallbacks, HasCollisionDetection {
   void restart() {
     isIdle = false;
     _totalDt = 0;
-
     remove(player);
     player = Player();
     scoreNotifier.gameOver = false;
@@ -75,40 +80,31 @@ class JumperGame extends FlameGame with TapCallbacks, HasCollisionDetection {
     resumeEngine();
   }
 
-  get speed => _baseSpeed + charge * 2;
-  get totalDt => _totalDt.toInt();
-  void addDt(double dt) {
-    _totalDt += dt;
-    if (_totalDt > scoreNotifier.score) {
-      scoreNotifier.setScore(_totalDt.toInt());
-    }
-  }
-
-  double _timeSinceBox = 0;
+  int get speed => _baseSpeed + charge * 2;
+  int get totalDt => _totalDt.toInt();
 
   @override
   void update(double dt) {
     super.update(dt);
     if (!isIdle) {
       _timeSinceBox += dt;
-      addDt(dt);
+      _totalDt += dt;
+      if (_totalDt > scoreNotifier.score) {
+        scoreNotifier.setScore(_totalDt.toInt());
+      }
       _timeSinceBox += dt;
       if (_timeSinceBox > (10 / (12 + totalDt) + 1)) {
-        add(BoxStack(isBottom: true));
+        add(Box());
         _timeSinceBox = 0;
       }
     }
   }
-
-  int pressStartTime = 0;
 
   @override
   void onTapUp(TapUpEvent event) {
     super.onTapUp(event);
     if (isIdle) {
       final pressEndTime = DateTime.now().millisecondsSinceEpoch;
-      charge = (pressEndTime - pressStartTime) ~/ 2;
-
       charge = min((pressEndTime - pressStartTime) ~/ 2, 450);
       player.jump();
     }
@@ -125,6 +121,7 @@ class JumperGame extends FlameGame with TapCallbacks, HasCollisionDetection {
 
 class Player extends SpriteAnimationComponent
     with CollisionCallbacks, HasGameRef<JumperGame> {
+  double acceleration = 1;
   Player() : super(size: Vector2(100, 100), position: Vector2(100, 100));
 
   EffectController e = EffectController(
@@ -134,10 +131,12 @@ class Player extends SpriteAnimationComponent
 
   @override
   Future<void>? onLoad() async {
-    add(CircleHitbox(
-      radius: 25,
-      position: Vector2(25, 50),
-    ));
+    add(
+      CircleHitbox(
+        radius: 25,
+        position: Vector2(25, 50),
+      ),
+    );
     final image = await Flame.images.load('slime.png');
     animation = SpriteAnimation.fromFrameData(
       image,
@@ -159,10 +158,8 @@ class Player extends SpriteAnimationComponent
 
       final collisionVector = absoluteCenter - mid;
       collisionVector.normalize();
-
-      bool isPlayerFallingDown = collisionVector.dot(Vector2(0, -1)) > 0.95;
-      bool isTopmostBoxSide = position.y < (other.y - 70);
-
+      final isPlayerFallingDown = collisionVector.dot(Vector2(0, -1)) > 0.95;
+      final isTopmostBoxSide = position.y < (other.y - 70);
       if (isPlayerFallingDown && isTopmostBoxSide && other is Box) {
         gameRef.isIdle = true;
         e.setToEnd();
@@ -174,12 +171,9 @@ class Player extends SpriteAnimationComponent
     super.onCollision(intersectionPoints, other);
   }
 
-  double acceleration = 1;
-
   @override
   void update(double dt) {
     super.update(dt);
-
     if (!gameRef.isIdle && position.y < (game.size.y - 100)) {
       position.y += 350 * dt * acceleration;
       acceleration *= 1.04;
@@ -195,7 +189,6 @@ class Player extends SpriteAnimationComponent
     );
     final effect =
         MoveByEffect(Vector2(0, -100 + (-gameRef.charge).toDouble()), e);
-
     add(effect);
   }
 }
@@ -216,78 +209,38 @@ class Sky extends SpriteComponent {
   }
 }
 
-class Box extends SpriteComponent {
+class Box extends SpriteComponent with HasGameRef<JumperGame> {
   static Vector2 initialSize = Vector2.all(100);
-  bool isTopmost;
-  Box({super.position, super.size, this.isTopmost = false}) : super();
-
-  @override
-  Future<void>? onLoad() async {
-    final boxImage = await Flame.images.load('1.png');
-
-    sprite = Sprite(boxImage);
-
-    if (isTopmost) {
-      add(RectangleHitbox(isSolid: true));
-    }
-  }
-}
-
-class BoxStack extends PositionComponent with HasGameRef<JumperGame> {
-  final bool isBottom;
-  static final random = Random();
   final double? spawnX;
-  BoxStack({required this.isBottom, this.spawnX});
+  Box({this.spawnX}) : super();
 
   @override
   Future<void>? onLoad() async {
-    position.x = spawnX ?? gameRef.size.x;
-    final gameHeight = gameRef.size.y;
-    final boxHeight = Box.initialSize.y;
-    final maxStackHeight = (gameHeight / boxHeight).floor() - 3;
-
-    final stackHeight = maxStackHeight;
-    final boxSpacing = boxHeight * (2 / 3);
-    final initialY = isBottom ? gameHeight - boxHeight : -boxHeight / 3;
-
-    Vector2 boxStackSize = getBoxSize();
-    final boxs = List.generate(stackHeight, (index) {
-      return Box(
-        position:
-            Vector2(0, initialY + index * boxSpacing * (isBottom ? -1 : 1)),
-        size: boxStackSize,
-        isTopmost: index == (stackHeight - 1),
-      );
-    });
-    addAll(isBottom ? boxs : boxs.reversed);
+    final boxImage = await Flame.images.load('box.png');
+    sprite = Sprite(boxImage);
+    final randomFactor = Random().nextDouble() / 2 + 0.75;
+    var width = (10 / (10 + gameRef.totalDt)) * 400 * randomFactor;
+    width += spawnX != null ? 700 : 0;
+    size = Vector2(width, gameRef.size.y / 4);
+    position = Vector2(spawnX ?? gameRef.size.x, gameRef.size.y * 3 / 4);
+    add(RectangleHitbox(isSolid: true));
   }
 
   @override
   void update(double dt) {
     super.update(dt);
-    if (position.x < -(Box.initialSize.x + 1000)) {
+    if (position.x < -(Box.initialSize.x + 1200)) {
       removeFromParent();
     }
-
     if (!gameRef.isIdle) {
       position.x -= gameRef.speed * dt;
     }
-  }
-
-  Vector2 getBoxSize() {
-    double widthCoefficient = 10 / (10 + gameRef.totalDt);
-    double randomFactor = Random().nextDouble() / 2 + 0.75;
-    double width = widthCoefficient * 400 * randomFactor;
-    if (spawnX != null) {
-      width += 700;
-    }
-    return Vector2(width, 150);
   }
 }
 
 class Hud extends StatefulWidget {
   final JumperGame game;
-  const Hud({super.key, required this.game});
+  const Hud({required this.game, super.key});
 
   @override
   State<Hud> createState() => _HudState();
@@ -303,37 +256,40 @@ class _HudState extends State<Hud> {
           final p = Provider.of<ScoreNotifier>(context);
           return Stack(
             children: [
-              p.isGameOver
-                  ? Center(
-                      child: Container(
-                      color: Colors.amber,
-                      height: 150,
-                      width: 150,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            "You scored ${p.score} !",
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                            ),
+              if (p.isGameOver)
+                Center(
+                  child: Container(
+                    color: const Color.fromARGB(255, 127, 208, 240),
+                    height: 150,
+                    width: 150,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'You scored ${p.score} !',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
                           ),
-                          const SizedBox(
-                            height: 16,
-                          ),
-                          ElevatedButton(
-                            onPressed: () {
-                              widget.game.restart();
-                            },
-                            child: const Text("Play again"),
-                          ),
-                        ],
-                      ),
-                    ))
-                  : Text(
-                      "Current score: ${p.score}",
-                      style: const TextStyle(color: Colors.white, fontSize: 32),
+                        ),
+                        const SizedBox(
+                          height: 16,
+                        ),
+                        IconButton(
+                          onPressed: () => widget.game.restart(),
+                          icon: const Icon(Icons.replay_outlined),
+                        ),
+                      ],
                     ),
+                  ),
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Text(
+                    'Current score: ${p.score}',
+                    style: const TextStyle(color: Colors.white, fontSize: 32),
+                  ),
+                ),
             ],
           );
         },
