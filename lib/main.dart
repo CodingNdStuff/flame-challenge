@@ -11,6 +11,8 @@ import 'package:provider/provider.dart';
 class ScoreNotifier extends ChangeNotifier {
   int score = 0;
   bool isGameOver = false;
+  double _chargePercentage = 0;
+
   set gameOver(bool state) {
     isGameOver = state;
     notifyListeners();
@@ -20,6 +22,13 @@ class ScoreNotifier extends ChangeNotifier {
     score = s;
     notifyListeners();
   }
+
+  set chargePercentage(double charge) {
+    _chargePercentage = charge;
+    notifyListeners();
+  }
+
+  double get chargePercentage => _chargePercentage;
 }
 
 late ScoreNotifier scoreNotifier;
@@ -53,6 +62,7 @@ class JumperGame extends FlameGame with TapCallbacks, HasCollisionDetection {
   double _totalDt = 0;
   double _timeSinceBox = 0;
   int pressStartTime = 0;
+  bool isPressing = false;
 
   @override
   Future<void>? onLoad() async {
@@ -97,12 +107,17 @@ class JumperGame extends FlameGame with TapCallbacks, HasCollisionDetection {
         add(Box());
         _timeSinceBox = 0;
       }
+    } else if (isPressing) {
+      final pressEndTime = DateTime.now().millisecondsSinceEpoch;
+      scoreNotifier.chargePercentage =
+          min((pressEndTime - pressStartTime) ~/ 2, 450) / 450;
     }
   }
 
   @override
   void onTapUp(TapUpEvent event) {
     super.onTapUp(event);
+    isPressing = false;
     if (isIdle) {
       final pressEndTime = DateTime.now().millisecondsSinceEpoch;
       charge = min((pressEndTime - pressStartTime) ~/ 2, 450);
@@ -115,6 +130,7 @@ class JumperGame extends FlameGame with TapCallbacks, HasCollisionDetection {
     super.onTapDown(event);
     if (isIdle) {
       pressStartTime = DateTime.now().millisecondsSinceEpoch;
+      isPressing = true;
     }
   }
 }
@@ -164,6 +180,7 @@ class Player extends SpriteAnimationComponent
         gameRef.isIdle = true;
         e.setToEnd();
         position.y = other.y - size.y;
+        scoreNotifier.chargePercentage = 0;
       } else if (position.y > size.x && other is ScreenHitbox) {
         gameRef.gameover();
       }
@@ -285,9 +302,26 @@ class _HudState extends State<Hud> {
               else
                 Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: Text(
-                    'Current score: ${p.score}',
-                    style: const TextStyle(color: Colors.white, fontSize: 32),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Current score: ${p.score}',
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 32),
+                      ),
+                      Container(
+                        height: 16,
+                        width: 100,
+                        margin: const EdgeInsets.only(
+                          top: 16,
+                          left: 4,
+                        ),
+                        child: LinearProgressIndicator(
+                          value: p.chargePercentage,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
             ],
